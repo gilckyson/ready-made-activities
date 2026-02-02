@@ -28,11 +28,7 @@ Como executar (Docker, sem Dockerfile extra):
 
 3. Documentação: abra `http://localhost:8000/docs`
 
-Notas:
-- Este repositório foi mantido com apenas os quatro arquivos que você pediu.
-- Se preferir, posso mudar a estratégia de instalação no `docker-compose` para usar um build + Dockerfile, mas você pediu para não criar mais arquivos.
-
----
 
 
 Quer que eu reduza ainda mais os endpoints ou adicione um exemplo pronto de curl para listar `alunos` com token? Responda com sim/não.
+
