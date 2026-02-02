@@ -390,3 +390,4 @@ def list_tarefas(current_user: Aluno = Depends(get_current_user)):
 def root():
     return {"message": "Charlas minimal API. See /docs for OpenAPI docs"}
 
+
