@@ -1,100 +1,176 @@
 import os
+import uuid
+import enum
 from datetime import datetime, timedelta
 from typing import List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from pydantic import BaseModel
-from sqlalchemy import (Boolean, Column, DateTime, ForeignKey, Integer, String,
-                        Table, Text, create_engine)
+from sqlalchemy import (
+    Column, DateTime, ForeignKey, Integer, String,
+    Table, Text, create_engine, Enum
+)
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session, relationship, sessionmaker
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 from faker import Faker
 
-# Config
+# =======================
+# CONFIG
+# =======================
+
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-prod")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./database.db")
 
-# SQLAlchemy setup
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+# =======================
+# DATABASE SETUP
+# =======================
+
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False}
+)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# Association table for many-to-many Professor <-> Disciplina
+# =======================
+# ENUMS (CORRIGIDOS)
+# =======================
+
+class TipoTarefa(str, enum.Enum):
+    ATIVIDADE = "ATIVIDADE"
+    PROJETO = "PROJETO"
+
+class StatusTarefa(str, enum.Enum):
+    PENDENTE = "PENDENTE"
+    EM_ANDAMENTO = "EM_ANDAMENTO"
+    CONCLUIDA = "CONCLUIDA"
+
+# =======================
+# TABELA N:N PROFESSOR <-> DISCIPLINA (UUID)
+# =======================
+
 professor_disciplina = Table(
-    'professor_disciplina', Base.metadata,
-    Column('professor_id', Integer, ForeignKey('professor.id'), primary_key=True),
-    Column('disciplina_id', Integer, ForeignKey('disciplina.id'), primary_key=True)
+    'professor_disciplina',
+    Base.metadata,
+    Column('professor_id', UUID(as_uuid=True), ForeignKey('professor.id'), primary_key=True),
+    Column('disciplina_id', UUID(as_uuid=True), ForeignKey('disciplina.id'), primary_key=True)
 )
+
+# =======================
+# MODELS (TABELAS)
+# =======================
 
 class Turma(Base):
     __tablename__ = 'turma'
-    id = Column(Integer, primary_key=True, index=True)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     nome = Column(String, nullable=False)
     criada_em = Column(DateTime, default=datetime.utcnow)
+
     alunos = relationship('Aluno', back_populates='turma')
+
 
 class Aluno(Base):
     __tablename__ = 'aluno'
-    id = Column(Integer, primary_key=True, index=True)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     nome = Column(String, nullable=False)
-    email = Column(String, unique=True, index=True)
+    email = Column(String, unique=True, index=True, nullable=False)
     senha_hash = Column(String, nullable=False)
-    turma_id = Column(Integer, ForeignKey('turma.id'))
+
+    turma_id = Column(UUID(as_uuid=True), ForeignKey('turma.id'))
+
     criado_em = Column(DateTime, default=datetime.utcnow)
-    atualizado_em = Column(DateTime, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
     turma = relationship('Turma', back_populates='alunos')
+    tarefas = relationship('Tarefa', back_populates='aluno')
+
 
 class Disciplina(Base):
     __tablename__ = 'disciplina'
-    id = Column(Integer, primary_key=True, index=True)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     nome = Column(String, nullable=False)
     codigo = Column(String, nullable=True)
-    professores = relationship('Professor', secondary=professor_disciplina, back_populates='disciplinas')
+
+    professores = relationship(
+        'Professor',
+        secondary=professor_disciplina,
+        back_populates='disciplinas'
+    )
+
+    tarefas = relationship('Tarefa', back_populates='disciplina')
+
 
 class Professor(Base):
     __tablename__ = 'professor'
-    id = Column(Integer, primary_key=True, index=True)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     nome = Column(String, nullable=False)
-    email = Column(String, unique=True, index=True)
-    disciplinas = relationship('Disciplina', secondary=professor_disciplina, back_populates='professores')
+    email = Column(String, unique=True, index=True, nullable=True)
+
+    disciplinas = relationship(
+        'Disciplina',
+        secondary=professor_disciplina,
+        back_populates='professores'
+    )
+
+    tarefas = relationship('Tarefa', back_populates='professor')
+
 
 class Tarefa(Base):
     __tablename__ = 'tarefa'
-    id = Column(Integer, primary_key=True, index=True)
-    tipo = Column(String)
-    titulo = Column(String)
-    descricao = Column(Text)
-    disciplina_id = Column(Integer, ForeignKey('disciplina.id'))
-    professor_id = Column(Integer, ForeignKey('professor.id'))
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    aluno_id = Column(UUID(as_uuid=True), ForeignKey('aluno.id'), nullable=False)
+    disciplina_id = Column(UUID(as_uuid=True), ForeignKey('disciplina.id'), nullable=False)
+    professor_id = Column(UUID(as_uuid=True), ForeignKey('professor.id'), nullable=False)
+
+    tipo = Column(Enum(TipoTarefa), nullable=False)
+    titulo = Column(String, nullable=False)
+    descricao = Column(Text, nullable=True)
     pontos = Column(Integer, default=0)
     data_entrega = Column(DateTime, nullable=True)
-    status = Column(String, default='pendente')
+    status = Column(Enum(StatusTarefa), default=StatusTarefa.PENDENTE)
+
     iniciada_em = Column(DateTime, nullable=True)
     concluida_em = Column(DateTime, nullable=True)
-    criada_em = Column(DateTime, default=datetime.utcnow)
-    atualizada_em = Column(DateTime, default=datetime.utcnow)
 
-# Pydantic schemas
+    criada_em = Column(DateTime, default=datetime.utcnow)
+    atualizada_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    aluno = relationship('Aluno', back_populates='tarefas')
+    disciplina = relationship('Disciplina', back_populates='tarefas')
+    professor = relationship('Professor', back_populates='tarefas')
+
+# =======================
+# SCHEMAS (Pydantic)
+# =======================
+
 class Token(BaseModel):
     access_token: str
     token_type: str
 
 class AlunoOut(BaseModel):
-    id: int
+    id: uuid.UUID
     nome: str
     email: Optional[str]
-    turma_id: Optional[int]
+    turma_id: Optional[uuid.UUID]
 
     class Config:
         orm_mode = True
 
 class ProfessorOut(BaseModel):
-    id: int
+    id: uuid.UUID
     nome: str
     email: Optional[str]
 
@@ -102,7 +178,7 @@ class ProfessorOut(BaseModel):
         orm_mode = True
 
 class DisciplinaOut(BaseModel):
-    id: int
+    id: uuid.UUID
     nome: str
     codigo: Optional[str]
 
@@ -110,16 +186,20 @@ class DisciplinaOut(BaseModel):
         orm_mode = True
 
 class TarefaOut(BaseModel):
-    id: int
+    id: uuid.UUID
     titulo: str
     descricao: Optional[str]
     pontos: int
-    status: str
+    status: StatusTarefa
+    tipo: TipoTarefa
 
     class Config:
         orm_mode = True
 
-# Auth helpers
+# =======================
+# AUTH (JWT)
+# =======================
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 
@@ -131,7 +211,9 @@ def get_password_hash(password):
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta if expires_delta else timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    expire = datetime.utcnow() + (
+        expires_delta if expires_delta else timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -139,7 +221,6 @@ def get_user_by_email(db: Session, email: str):
     return db.query(Aluno).filter(Aluno.email == email).first()
 
 def authenticate_user(db: Session, username: str, password: str):
-    # Try to find in Aluno (students) for simplicity
     user = get_user_by_email(db, username)
     if not user:
         return None
@@ -160,78 +241,116 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
             raise credentials_exception
     except JWTError:
         raise credentials_exception
+
     db = SessionLocal()
     user = get_user_by_email(db, username)
     db.close()
+
     if user is None:
         raise credentials_exception
     return user
 
-# App
-app = FastAPI(title="Charlas Minimal API", description="API com seed, JWT, SQLAlchemy e Pydantic")
+# =======================
+# APP
+# =======================
+
+app = FastAPI(
+    title="Charlas Minimal API",
+    description="API com seed, JWT, SQLAlchemy e Pydantic"
+)
 
 @app.on_event("startup")
 def startup_event():
-    # create tables and seed DB if empty
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
+
     try:
-        exists = db.query(Aluno).first()
-        if exists:
+        if db.query(Aluno).first():
             return
+
         fake = Faker()
-        # create turmas
+
+        # Turmas
         turmas = []
         for i in range(3):
             t = Turma(nome=f"Turma {i+1}")
             db.add(t)
             turmas.append(t)
         db.commit()
-        # create disciplines
+
+        # Disciplinas
         disciplinas = []
         for i in range(4):
             d = Disciplina(nome=fake.word().title(), codigo=f"D{i+1:03}")
             db.add(d)
             disciplinas.append(d)
         db.commit()
-        # create professors
+
+        # Professores
         professors = []
         for i in range(3):
             p = Professor(nome=fake.name(), email=f"prof{i+1}@example.com")
             db.add(p)
             professors.append(p)
         db.commit()
-        # associate professor-discipline
+
+        # Relacionar professor-disciplina
         for i, d in enumerate(disciplinas):
             p = professors[i % len(professors)]
             p.disciplinas.append(d)
         db.commit()
-        # create students
+
+        # Alunos
         for i in range(10):
             turma = turmas[i % len(turmas)]
             email = f"aluno{i+1}@example.com"
-            aluno = Aluno(nome=fake.name(), email=email, senha_hash=get_password_hash('password'), turma=turma)
+            aluno = Aluno(
+                nome=fake.name(),
+                email=email,
+                senha_hash=get_password_hash('password'),
+                turma=turma
+            )
             db.add(aluno)
         db.commit()
-        # create tasks
+
+        # Tarefas (AGORA COM ALUNO_ID)
         alunos = db.query(Aluno).all()
         for i in range(8):
             d = disciplinas[i % len(disciplinas)]
             p = professors[i % len(professors)]
-            ttask = Tarefa(titulo=fake.sentence(nb_words=4), descricao=fake.text(max_nb_chars=100), disciplina_id=d.id, professor_id=p.id, pontos=10)
+            a = alunos[i % len(alunos)]
+
+            ttask = Tarefa(
+                titulo=fake.sentence(nb_words=4),
+                descricao=fake.text(max_nb_chars=100),
+                disciplina_id=d.id,
+                professor_id=p.id,
+                aluno_id=a.id,
+                pontos=10,
+                tipo=TipoTarefa.ATIVIDADE,
+                status=StatusTarefa.PENDENTE
+            )
             db.add(ttask)
         db.commit()
-        print('Seed aplicado com dados falsos. Usuários criados com senha: "password"')
+
+        print('Seed aplicado. Usuários criados com senha: "password"')
+
     finally:
         db.close()
+
+# =======================
+# ROTAS
+# =======================
 
 @app.post('/token', response_model=Token)
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
     db = SessionLocal()
     user = authenticate_user(db, form_data.username, form_data.password)
     db.close()
+
     if not user:
         raise HTTPException(status_code=400, detail='Incorrect username or password')
+
     access_token = create_access_token(data={"sub": user.email})
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -263,11 +382,11 @@ def list_disciplinas(current_user: Aluno = Depends(get_current_user)):
 @app.get('/tarefas', response_model=List[TarefaOut])
 def list_tarefas(current_user: Aluno = Depends(get_current_user)):
     db = SessionLocal()
-    ts = db.query(Tarefa).all()
+    ts = db.query(Tarefa).filter(Tarefa.aluno_id == current_user.id).all()
     db.close()
     return ts
 
-# Minimal root
 @app.get('/')
 def root():
     return {"message": "Charlas minimal API. See /docs for OpenAPI docs"}
+
