@@ -1,4 +1,4 @@
-# Charlas (mínimo) 🧾
+# Charlas🧾
 
 Arquivos incluídos (apenas estes 4):
 - `docker-compose.yml` — roda container com Python e instala dependências na inicialização
@@ -33,5 +33,6 @@ Notas:
 - Se preferir, posso mudar a estratégia de instalação no `docker-compose` para usar um build + Dockerfile, mas você pediu para não criar mais arquivos.
 
 ---
+
 
 Quer que eu reduza ainda mais os endpoints ou adicione um exemplo pronto de curl para listar `alunos` com token? Responda com sim/não.
