@@ -1,0 +1,18 @@
+[project]
+name = "charlas"
+version = "0.1.0"
+description = "Charlas - exemplo de API em FastAPI com JWT"
+authors = ["Your Name <you@example.com>"]
+
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "sqlalchemy",
+    "pydantic",
+    "python-jose[cryptography]",
+    "passlib[bcrypt]",
+    "faker"
+]
+
+[tool.pdm.scripts]
+start = "uvicorn app:app --host 0.0.0.0 --port 8000 --reload"
