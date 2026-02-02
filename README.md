@@ -30,5 +30,5 @@ Como executar (Docker, sem Dockerfile extra):
 
 
 
-Quer que eu reduza ainda mais os endpoints ou adicione um exemplo pronto de curl para listar `alunos` com token? Responda com sim/não.
+
 
